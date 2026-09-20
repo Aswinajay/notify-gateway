@@ -44,14 +44,23 @@ services:
         value: "50"
       - key: BAILEYS_SESSION_STORE_MAX_ENTRIES
         value: "100"
-      # Database: absolute path on persistent disk
+      # All data paths: absolute paths on persistent disk (/data)
       - key: DATABASE_TYPE
         value: sqlite
+      - key: MAIN_DATABASE_NAME
+        value: /data/main.sqlite
       - key: DATABASE_NAME
         value: /data/openwa.sqlite
-      # Session data: absolute path on persistent disk
       - key: SESSION_DATA_PATH
         value: /data/sessions
+      - key: BAILEYS_AUTH_DIR
+        value: /data/baileys
+      - key: PLUGIN_STATE_DIR
+        value: /data
+      - key: BOOTSTRAP_KEY_FILE
+        value: /data/.api-key
+      - key: STORAGE_LOCAL_PATH
+        value: /data/media
       # Bounded session startup: stagger by 3s, max 1 concurrent
       - key: AUTO_START_SESSIONS
         value: "true"

@@ -91,7 +91,8 @@ COPY --from=builder /app/dashboard/dist ./dashboard/dist
 
 # Set up data directories and permissions
 RUN mkdir -p ./data/sessions ./data/media ./data/baileys \
-    && chown -R openwa:openwa /app
+    && mkdir -p /data \
+    && chown -R openwa:openwa /app /data
 
 USER openwa
 
