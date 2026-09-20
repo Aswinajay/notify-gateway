@@ -3,9 +3,12 @@ import { ConfigService } from '@nestjs/config';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as crypto from 'crypto';
-import * as tar from 'tar';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import type { SnapshotManifest, SnapshotFile } from './r2-snapshot.interface';
 import { SNAPSHOT_FORMAT_VERSION, buildSnapshotKey, buildManifestKey } from './r2-snapshot.interface';
+
+const execFileAsync = promisify(execFile);
 
 let S3: any, Put: any, Get: any, Head: any, List: any, Del: any;
 async function loadS3() {
@@ -156,8 +159,8 @@ export class R2SyncService implements OnModuleDestroy {
     if (!files.length) return;
     const archive = `${sessionDir}.r2_${snapId}.tar.gz`;
     try {
-      await tar.create({ gzip: true, file: archive, cwd: sessionDir, portable: true, noMtime: true },
-        files.map(f => f.path));
+      const fileNames = files.map(f => f.path);
+      await execFileAsync('tar', ['-czf', archive, '-C', sessionDir, ...fileNames]);
       const st = await fs.stat(archive);
       const cksum = await this.checksum(archive);
       const manifest: SnapshotManifest = {
@@ -170,7 +173,7 @@ export class R2SyncService implements OnModuleDestroy {
       await this.retry(() => client.send(new Put({ Bucket: this.cfg!.bucket, Key: aKey, Body: buf, ContentType: 'application/gzip',
         Metadata: { 'snapshot-id': snapId, 'session-id': sessionId } })));
       await this.retry(async () => {
-        const h = await client.send(new Head({ Bucket: this.cfg!.bucket, Key: aKey }));
+        const h: any = await client.send(new Head({ Bucket: this.cfg!.bucket, Key: aKey }));
         if (h.ContentLength !== st.size) throw new Error(`Size mismatch: ${h.ContentLength} != ${st.size}`);
       });
       const mKey = buildManifestKey(this.cfg.prefix, this.cfg.environment, sessionId);
@@ -204,7 +207,7 @@ export class R2SyncService implements OnModuleDestroy {
     try {
       const client = await this.getClient();
       const key = buildManifestKey(this.cfg.prefix, this.cfg.environment, sessionId);
-      const res = await this.retry(() => client.send(new Get({ Bucket: this.cfg!.bucket, Key: key })));
+      const res: any = await this.retry(() => client.send(new Get({ Bucket: this.cfg!.bucket, Key: key })));
       const body = await streamToString(res.Body);
       const m: SnapshotManifest = JSON.parse(body);
       if (!m.valid || m.formatVersion > SNAPSHOT_FORMAT_VERSION) return null;
@@ -216,11 +219,11 @@ export class R2SyncService implements OnModuleDestroy {
     if (!this.cfg) return;
     const client = await this.getClient();
     const key = buildSnapshotKey(this.cfg.prefix, this.cfg.environment, sessionId, manifest.snapshotId);
-    const res = await this.retry(() => client.send(new Get({ Bucket: this.cfg!.bucket, Key: key })));
+    const res: any = await this.retry(() => client.send(new Get({ Bucket: this.cfg!.bucket, Key: key })));
     const archivePath = `${targetDir}.download.tar.gz`;
     const body = await streamToBuffer(res.Body);
     await fs.writeFile(archivePath, body);
-    try { await tar.extract({ file: archivePath, cwd: targetDir }); }
+    try { await execFileAsync('tar', ['-xzf', archivePath, '-C', targetDir]); }
     finally { try { await fs.unlink(archivePath); } catch {} }
   }
 
@@ -240,7 +243,7 @@ export class R2SyncService implements OnModuleDestroy {
     try {
       const client = await this.getClient();
       const prefix = `${this.cfg.prefix}/${this.cfg.environment}/${sessionId}/snapshots/`;
-      const res = await this.retry(() => client.send(new List({ Bucket: this.cfg!.bucket, Prefix: prefix })));
+      const res: any = await this.retry(() => client.send(new List({ Bucket: this.cfg!.bucket, Prefix: prefix })));
       const objs = (res.Contents || []).sort((a: any, b: any) => new Date(b.LastModified).getTime() - new Date(a.LastModified).getTime());
       for (const obj of objs.slice(this.cfg.maxRetained)) {
         await this.retry(() => client.send(new Del({ Bucket: this.cfg!.bucket, Key: obj.Key })));
