@@ -1,42 +1,35 @@
 # =====================================================================
-# Render Blueprint Specification for OpenWA (Free Tier Optimized)
+# Render Blueprint Specification for OpenWA (Free Tier Optimized + R2 Sync)
 # =====================================================================
-# Documentation: https://render.com/docs/blueprint-spec
-#
-# Deploy options:
-# 1. Connect your GitHub fork (Aswinajay/OpenWA) to Render.
-# 2. Choose "Blueprints" -> "New Blueprint Instance".
-# 3. Render will automatically read this file and set up OpenWA!
+# Requires a Render Persistent Disk mounted at /data for SQLite + sessions.
+# R2 provides durable recovery snapshots — NOT a live filesystem.
 # =====================================================================
 
 services:
   - type: web
     name: openwa
-    # Native Node 22 runtime is fast and memory-efficient.
-    # To use Docker instead:
-    # runtime: docker
-    # dockerfilePath: ./Dockerfile.render
     runtime: node
     plan: free
     region: oregon
     buildCommand: PUPPETEER_SKIP_DOWNLOAD=true npm ci && npm run build:all
     startCommand: node dist/main
     healthCheckPath: /api/health
+    # Persistent disk for SQLite + Baileys session data
+    disk:
+      name: openwa-data
+      mountPath: /data
+      sizeGB: 1
     envVars:
       - key: NODE_ENV
         value: production
-      # Ultra-low memory: 256MB V8 heap limit optimized for size
       - key: NODE_OPTIONS
         value: --max-old-space-size=256
       - key: HOST
         value: 0.0.0.0
-      # Critical for 512MB RAM: Baileys connects via pure WebSocket (no Chromium)
       - key: ENGINE_TYPE
         value: baileys
-      # Micro-optimization: Send-only mode (drops inbound message processing entirely)
       - key: OUTBOUND_ONLY
         value: "true"
-      # Lite mode: omits non-essential auxiliary modules to fit in <= 100MB RAM
       - key: LITE_MODE
         value: "true"
       - key: BAILEYS_SYNC_HISTORY
@@ -51,16 +44,34 @@ services:
         value: "50"
       - key: BAILEYS_SESSION_STORE_MAX_ENTRIES
         value: "100"
-      # Database: lightweight SQLite without external DB requirement
+      # Database: absolute path on persistent disk
       - key: DATABASE_TYPE
         value: sqlite
       - key: DATABASE_NAME
-        value: ./data/openwa.sqlite
+        value: /data/openwa.sqlite
+      # Session data: absolute path on persistent disk
       - key: SESSION_DATA_PATH
-        value: ./data/sessions
+        value: /data/sessions
+      # Bounded session startup: stagger by 3s, max 1 concurrent
       - key: AUTO_START_SESSIONS
         value: "true"
-      # Turn off optional heavy services to save RAM
+      - key: AUTOSTART_THROTTLE_MS
+        value: "3000"
+      - key: MAX_CONCURRENT_SESSIONS
+        value: "1"
+      # R2 sync (set these in Render dashboard, not here)
+      # - R2_SYNC_ENABLED=true
+      # - R2_BUCKET=openwa-snapshots
+      # - R2_ENDPOINT=https://<account>.r2.cloudflarestorage.com
+      # - R2_ACCESS_KEY_ID=<from Render secrets>
+      # - R2_SECRET_ACCESS_KEY=<from Render secrets>
+      - key: R2_SYNC_ENABLED
+        value: "false"
+      - key: R2_DEBOUNCE_MS
+        value: "45000"
+      - key: R2_MAX_RETAINED
+        value: "2"
+      # Memory-heavy optional services disabled
       - key: QUEUE_ENABLED
         value: "false"
       - key: REDIS_ENABLED
@@ -75,6 +86,5 @@ services:
         value: "true"
       - key: PUPPETEER_SKIP_DOWNLOAD
         value: "true"
-      # Render will generate a cryptographically strong 32+ character key
       - key: API_MASTER_KEY
         generateValue: true
