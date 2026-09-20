@@ -11,7 +11,7 @@
 # =====================================================================
 
 # ===== Stage 1: Builder =====
-FROM docker.io/node:22-slim AS builder
+FROM docker.io/node:25-slim AS builder
 
 WORKDIR /app
 
@@ -35,7 +35,7 @@ COPY . .
 RUN npm run build && npm run dashboard:ci -- --include=dev && npm run dashboard:build && rm -f dist/*.tsbuildinfo
 
 # ===== Stage 2: Production Runtime =====
-FROM docker.io/node:22-slim AS production
+FROM docker.io/node:25-slim AS production
 
 ENV NODE_ENV=production \
     PUPPETEER_SKIP_DOWNLOAD=true \
