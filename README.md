@@ -16,13 +16,14 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/rmyndharis/OpenWA/actions/workflows/ci.yml"><img src="https://github.com/rmyndharis/OpenWA/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"/></a>
-  <img src="https://img.shields.io/github/package-json/v/rmyndharis/OpenWA?label=version&color=blue" alt="Version"/>
+  <a href="https://github.com/Aswinajay/OpenWA/actions/workflows/ci.yml"><img src="https://github.com/Aswinajay/OpenWA/actions/workflows/ci.yml/badge.svg?branch=lightweight" alt="CI"/></a>
+  <img src="https://img.shields.io/github/package-json/v/Aswinajay/OpenWA?label=version&color=blue" alt="Version"/>
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License"/>
   <img src="https://img.shields.io/badge/node-22_LTS-brightgreen.svg" alt="Node"/>
-  <img src="https://img.shields.io/github/package-json/dependency-version/rmyndharis/OpenWA/@nestjs/core?label=NestJS&color=red" alt="NestJS"/>
+  <img src="https://img.shields.io/github/package-json/dependency-version/Aswinajay/OpenWA/@nestjs/core?label=NestJS&color=red" alt="NestJS"/>
   <img src="https://img.shields.io/badge/docker-ready-blue.svg" alt="Docker"/>
-  <img src="https://img.shields.io/github/package-json/dependency-version/rmyndharis/OpenWA/dev/typescript?label=TypeScript&color=3178C6" alt="TypeScript"/>
+  <img src="https://img.shields.io/github/package-json/dependency-version/Aswinajay/OpenWA/dev/typescript?label=TypeScript&color=3178C6" alt="TypeScript"/>
+  <img src="https://img.shields.io/badge/deployed-wa.eletroclay.com-brightgreen" alt="Deployed"/>
 </p>
 
 ---
@@ -127,7 +128,7 @@ OpenWA connects to WhatsApp through **reverse-engineered clients** (`whatsapp-we
 ### Option A: Docker (Recommended)
 
 ```bash
-git clone https://github.com/rmyndharis/OpenWA.git
+git clone https://github.com/Aswinajay/OpenWA.git
 cd OpenWA
 docker compose -f docker-compose.dev.yml up -d
 
@@ -139,7 +140,7 @@ docker compose -f docker-compose.dev.yml up -d
 ### Option B: Local Development
 
 ```bash
-git clone https://github.com/rmyndharis/OpenWA.git
+git clone https://github.com/Aswinajay/OpenWA.git
 cd OpenWA
 npm ci
 npm run dev
@@ -413,6 +414,134 @@ openwa/
 | [Development](./docs/08-development-guidelines.md) | Coding standards |
 | [Migration Guide](./docs/14-migration-guide.md) | Database & storage migration |
 | [Render Deployment](./RENDER_DEPLOYMENT.md) | Render Free Tier deployment guide |
+
+---
+
+## Live Deployment
+
+**Production URL**: `https://wa.eletroclay.com`
+
+| Component | Details |
+| --- | --- |
+| **Platform** | Render Free Tier (512 MB RAM) |
+| **Engine** | Baileys (WebSocket, OUTBOUND_ONLY mode) |
+| **Database** | Neon PostgreSQL (free tier) — `ep-polished-band-b3o67zju` |
+| **Session Storage** | Cloudflare R2 — `openwa-sessions` bucket |
+| **RAM Usage** | ~45-75 MB (send-only optimized) |
+| **Sleep Prevention** | UptimeRobot cron ping every 10 minutes |
+
+### Environment Variables (Render Dashboard)
+
+```
+# Core
+NODE_ENV=production
+NODE_OPTIONS=--max-old-space-size=256
+HOST=0.0.0.0
+ENGINE_TYPE=baileys
+OUTBOUND_ONLY=true
+LITE_MODE=true
+
+# Database (Neon PostgreSQL)
+DATABASE_TYPE=postgres
+DATABASE_HOST=ep-polished-band-b3o67zju.c-4.ap-southeast-1.aws.neon.tech
+DATABASE_NAME=neondb
+DATABASE_USERNAME=neondb_owner
+DATABASE_PASSWORD=<neon-password>
+
+# Storage (Cloudflare R2)
+STORAGE_TYPE=s3
+S3_BUCKET=openwa-sessions
+S3_ENDPOINT=https://e6c5136e76b8d4e558655935bb86d510.r2.cloudflarestorage.com
+S3_REGION=auto
+S3_ACCESS_KEY_ID=<r2-access-key>
+S3_SECRET_ACCESS_KEY=<r2-secret-key>
+
+# Disabled (save RAM)
+BAILEYS_SYNC_HISTORY=false
+MEDIA_DOWNLOAD_ENABLED=false
+BAILEYS_MARK_ONLINE_ON_CONNECT=false
+BAILEYS_MESSAGE_STORE_LIMIT=50
+BAILEYS_SESSION_STORE_MAX_ENTRIES=100
+QUEUE_ENABLED=false
+REDIS_ENABLED=false
+CACHE_ENABLED=false
+SEARCH_ENABLED=false
+MCP_ENABLED=false
+SERVE_DASHBOARD=true
+PUPPETEER_SKIP_DOWNLOAD=true
+```
+
+---
+
+## RentalApp Integration
+
+OpenWA powers WhatsApp notifications for [RentalApp](https://github.com/Aswinajay/RentalApp) — a serverless dress rental management system on Cloudflare Workers.
+
+### How It Connects
+
+```
+RentalApp (Cloudflare Worker)
+    |
+    +-- POST /api/v1/whatsapp/send (enqueue job)
+    |
+    +-- Cloudflare Queue (whatsapp-jobs)
+    |
+    +-- Worker queue consumer
+            |
+            +-- POST https://wa.eletroclay.com/api/sessions/{sessionId}/messages/send-text
+            |       Authorization: Bearer <OPENWA_API_KEY>
+            |
+            +-- OpenWA → WhatsApp (Baileys WebSocket)
+```
+
+### RentalApp Secrets
+
+```bash
+# Set in Cloudflare Worker
+wrangler secret put OPENWA_API_KEY   # OpenWA master API key
+wrangler secret put OPENWA_URL       # https://wa.eletroclay.com
+wrangler secret put JWT_SECRET       # openssl rand -hex 32
+```
+
+### Message Types Sent
+
+| Trigger | Message Type | Description |
+| --- | --- | --- |
+| Booking confirmed | `booking_confirmation` | Rental details, dress info, amount |
+| Payment received | `payment_receipt` | Payment amount, balance due |
+| Status update | `status_update` | Booked → Picked Up → Delivered → Returned |
+| Return reminder | `return_reminder` | Upcoming return date notification |
+| Overdue alert | `overdue_alert` | Late fee warning |
+| Invoice | `invoice` | Full rental invoice with all charges |
+
+### Webhook (Delivery Tracking)
+
+OpenWA sends delivery status back to RentalApp:
+
+```bash
+POST https://rental-api.aswinajay949.workers.dev/api/v1/whatsapp/webhook
+Content-Type: application/json
+X-Webhook-Signature: <hmac-sha256>
+
+{
+  "event": "message.delivery",
+  "data": {
+    "id": "job-uuid",
+    "status": "delivered",
+    "timestamp": "2026-09-21T10:00:00Z"
+  }
+}
+```
+
+### Keep-Alive
+
+RentalApp's Cloudflare cron triggers pings OpenWA every 10 minutes:
+
+```
+GET https://wa.eletroclay.com/api/health
+```
+
+This prevents Render Free Tier from spinning down the service after 15 minutes of inactivity.
 
 ---
 
